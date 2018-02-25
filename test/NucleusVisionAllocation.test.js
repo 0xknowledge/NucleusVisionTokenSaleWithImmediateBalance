@@ -2,7 +2,7 @@ const BigNumber = web3.BigNumber;
 
 const NucleusVisionToken = artifacts.require("NucleusVisionToken");
 const NucleusVisionAllocation = artifacts.require("NucleusVisionAllocation");
-const TokenVesting = artifacts.require("TokenVesting");
+const NucleusVisionTokenVesting = artifacts.require("NucleusVisionTokenVesting");
 
 require('chai')
   .use(require('chai-as-promised'))
@@ -114,6 +114,46 @@ contract("NucleusVisionAllocation", function(accounts) {
     }
   });
 
+  it('balances should be correct', async function() {
+    await this.allocation.mintTokens(accounts[0], 100);
+    var balance = await this.token.balanceOf(accounts[0]);
+    balance.should.be.bignumber.equal(100);
+
+    const vestingStart = latestTime() + duration.minutes(1);
+    const vestingCliff = duration.days(1);
+    const vestingDuration = duration.days(4);
+
+    await this.allocation.mintTokensWithTimeBasedVesting(accounts[0], 100, vestingStart, vestingCliff, vestingDuration)
+    balance = await this.token.balanceOf(accounts[0]);
+    balance.should.be.bignumber.equal(200);
+
+    await this.allocation.unlockToken();
+
+    // transfers should fail though
+    await this.token.transfer(accounts[1], 200, {from: accounts[0]}).should.be.rejectedWith('revert');
+
+    await increaseTime(duration.days(1) + duration.minutes(10));
+    await advanceBlock();
+
+    var vesting_contract = NucleusVisionTokenVesting.at(await this.allocation.vesting(accounts[0]));
+    /*
+     *     balance = await this.token.unvestedBalanceOf(vesting_contract);
+     *     balance.should.be.bignumber.equal(25);*/
+
+    await vesting_contract.release(this.token.address)
+
+    await this.token.transfer(accounts[1], 125, {from: accounts[0]});
+
+    balance = await this.token.balanceOf(accounts[0]);
+    balance.should.be.bignumber.equal(75);
+    /*
+     *     balance = await this.token.balanceOf(vesting_contract);
+     *     balance.should.be.bignumber.equal(0);
+     *
+     *     balance = await this.token.unvestedBalanceOf(vesting_contract);
+     *     balance.should.be.bignumber.equal(0);*/
+  });
+
   it('unvested balance cannot be transferred', async function() {
     const vestingStart = latestTime() + duration.minutes(1);
     const vestingCliff = duration.days(1);
@@ -122,7 +162,7 @@ contract("NucleusVisionAllocation", function(accounts) {
     await this.allocation.mintTokensWithTimeBasedVesting(accounts[0], 100, vestingStart, vestingCliff, vestingDuration)
     await this.allocation.unlockToken();
 
-    var vesting_contract = TokenVesting.at(await this.allocation.vesting(accounts[0]));
+    var vesting_contract = NucleusVisionTokenVesting.at(await this.allocation.vesting(accounts[0]));
     // cannot transfer unvested tokens
     await this.token.transfer(accounts[1], 25, {from: accounts[0]}).should.be.rejectedWith('revert');
 
@@ -139,7 +179,7 @@ contract("NucleusVisionAllocation", function(accounts) {
     await this.token.transfer(accounts[1], 25, {from: accounts[0]});
     var balance = 0;
     balance = await this.token.balanceOf(accounts[0]);
-    balance.should.be.bignumber.equal(0);
+    balance.should.be.bignumber.equal(75);
     balance = await this.token.balanceOf(accounts[1]);
     balance.should.be.bignumber.equal(25);
   });
@@ -152,13 +192,13 @@ contract("NucleusVisionAllocation", function(accounts) {
     await this.allocation.mintTokensWithTimeBasedVesting(accounts[0], 100, vestingStart, vestingCliff, vestingDuration)
     await this.allocation.unlockToken();
 
-    var vesting_contract = TokenVesting.at(await this.allocation.vesting(accounts[0]));
+    var vesting_contract = NucleusVisionTokenVesting.at(await this.allocation.vesting(accounts[0]));
     var balance = 0;
 
     // without cliff being met no balance will be vested
     await vesting_contract.release(this.token.address).should.be.rejected;
     balance = await this.token.balanceOf(accounts[0]);
-    balance.should.be.bignumber.equal(0);
+    balance.should.be.bignumber.equal(100);
 
     await increaseTime(duration.days(1) + duration.minutes(1));
     await advanceBlock();
@@ -166,24 +206,24 @@ contract("NucleusVisionAllocation", function(accounts) {
     // after cliff is met 1/4th will be vested
     await vesting_contract.release(this.token.address)
     balance = await this.token.balanceOf(accounts[0]);
-    balance.should.be.bignumber.equal(25);
+    balance.should.be.bignumber.equal(100);
 
     // balance will not change until release is called
     await increaseTime(duration.days(1));
     balance = await this.token.balanceOf(accounts[0]);
-    balance.should.be.bignumber.equal(25);
+    balance.should.be.bignumber.equal(100);
 
     // after half of the duration half of the amount will be vested
     await vesting_contract.release(this.token.address)
     balance = await this.token.balanceOf(accounts[0]);
-    balance.should.be.bignumber.equal(50);
+    balance.should.be.bignumber.equal(100);
 
     // vested balance can be transferred as the owner likes
     await this.token.transfer(accounts[1], 30, {from: accounts[0]})
     balance = await this.token.balanceOf(accounts[1]);
     balance.should.be.bignumber.equal(30);
     balance = await this.token.balanceOf(accounts[0]);
-    balance.should.be.bignumber.equal(20);
+    balance.should.be.bignumber.equal(70);
 
     // once duration ends rest all should be vested
     await increaseTime(duration.days(3));

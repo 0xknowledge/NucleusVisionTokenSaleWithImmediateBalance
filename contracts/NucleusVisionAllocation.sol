@@ -1,7 +1,7 @@
 pragma solidity ^0.4.18;
 
 import "zeppelin-solidity/contracts/ownership/Ownable.sol";
-import "zeppelin-solidity/contracts/token/TokenVesting.sol";
+import "./NucleusVisionTokenVesting.sol";
 import './NucleusVisionToken.sol';
 
 /**
@@ -16,7 +16,7 @@ contract NucleusVisionAllocation is Ownable {
   NucleusVisionToken public token;
 
   // map of address to token vesting contract
-  mapping (address => TokenVesting) public vesting;
+  mapping (address => NucleusVisionTokenVesting) public vesting;
 
   /**
    * event for token mint logging
@@ -63,8 +63,10 @@ contract NucleusVisionAllocation is Ownable {
     require(beneficiary != 0x0);
     require(tokens > 0);
 
-    vesting[beneficiary] = new TokenVesting(beneficiary, start, cliff, duration, false);
+    vesting[beneficiary] = new NucleusVisionTokenVesting(beneficiary, start, cliff, duration, false);
+
     require(token.mint(address(vesting[beneficiary]), tokens));
+    token.updateVestingMap(beneficiary, address(vesting[beneficiary]));
 
     NucleusVisionTimeVestingTokensMinted(beneficiary, tokens, start, cliff, duration);
   }
@@ -91,7 +93,7 @@ contract NucleusVisionAllocation is Ownable {
   function releaseVestedTokens(address beneficiary) public {
     require(beneficiary != 0x0);
 
-    TokenVesting tokenVesting = vesting[beneficiary];
+    NucleusVisionTokenVesting tokenVesting = vesting[beneficiary];
     tokenVesting.release(token);
   }
 
